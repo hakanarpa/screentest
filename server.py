@@ -2,18 +2,15 @@
 # -*- coding: utf-8 -*-
 
 __author__ = "Screenly, Inc"
-__copyright__ = "Copyright 2012-2021, Screenly, Inc"
+__copyright__ = "Copyright 2012-2019, Screenly, Inc"
 __license__ = "Dual License: GPLv2 and Commercial License"
 
 import json
 import pydbus
-import psutil
 import re
 import sh
 import shutil
 import time
-import os
-
 import traceback
 import yaml
 import uuid
@@ -23,12 +20,12 @@ from datetime import datetime, timedelta
 from dateutil import parser as date_parser
 from functools import wraps
 from hurry.filesize import size
-from mimetypes import guess_type, guess_extension
+from mimetypes import guess_type
 from os import getenv, listdir, makedirs, mkdir, path, remove, rename, statvfs, stat, walk
 from subprocess import check_output
 from urlparse import urlparse
 
-from flask import Flask, escape, make_response, render_template, request, send_from_directory, url_for, jsonify
+from flask import Flask, make_response, render_template, request, send_from_directory, url_for, jsonify
 from flask_cors import CORS
 from flask_restful_swagger_2 import Api, Resource, Schema, swagger
 from flask_swagger_ui import get_swaggerui_blueprint
@@ -41,41 +38,28 @@ from lib import backup_helper
 from lib import db
 from lib import diagnostics
 from lib import queries
-from lib import raspberry_pi_helper
 
-from lib.github import is_up_to_date
 from lib.auth import authorized
-from lib.utils import download_video_from_youtube, json_dump
-from lib.utils import generate_perfect_paper_password, is_docker
+from lib.utils import generate_perfect_paper_password
 from lib.utils import get_active_connections, remove_connection
 from lib.utils import get_node_ip, get_node_mac_address
 from lib.utils import get_video_duration
-from lib.utils import is_balena_app, is_demo_node
-from lib.utils import string_to_bool
-from lib.utils import connect_to_redis
+from lib.utils import download_video_from_youtube, json_dump
 from lib.utils import url_fails
 from lib.utils import validate_url
+from lib.utils import is_balena_app, is_demo_node, is_wott_integrated, get_wott_device_id
 
 from settings import CONFIGURABLE_SETTINGS, DEFAULTS, LISTEN, PORT, settings, ZmqPublisher, ZmqCollector
 
 HOME = getenv('HOME', '/home/pi')
-CELERY_RESULT_BACKEND = getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
-CELERY_BROKER_URL = getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
-CELERY_TASK_RESULT_EXPIRES = timedelta(hours=6)
+CELERY_RESULT_BACKEND = getenv('CELERY_RESULT_BACKEND', 'rpc://')
+CELERY_BROKER_URL = getenv('CELERY_BROKER_URL', 'amqp://')
 
 app = Flask(__name__)
-app.debug = string_to_bool(os.getenv('DEBUG', 'False'))
-
 CORS(app)
 api = Api(app, api_version="v1", title="Screenly OSE API")
 
-r = connect_to_redis()
-celery = Celery(
-    app.name,
-    backend=CELERY_RESULT_BACKEND,
-    broker=CELERY_BROKER_URL,
-    result_expires=CELERY_TASK_RESULT_EXPIRES
-)
+celery = Celery(app.name, backend=CELERY_RESULT_BACKEND, broker=CELERY_BROKER_URL)
 
 
 ################################
@@ -87,13 +71,6 @@ def setup_periodic_tasks(sender, **kwargs):
     # Calls cleanup() every hour.
     sender.add_periodic_task(3600, cleanup.s(), name='cleanup')
     sender.add_periodic_task(3600, cleanup_usb_assets.s(), name='cleanup_usb_assets')
-    sender.add_periodic_task(60*5, get_display_power.s(), name='display_power')
-
-
-@celery.task
-def get_display_power():
-    r.set('display_power', diagnostics.get_display_power())
-    r.expire('display_power', 3600)
 
 
 @celery.task
@@ -101,29 +78,41 @@ def cleanup():
     sh.find(path.join(HOME, 'screenly_assets'), '-name', '*.tmp', '-delete')
 
 
+@celery.task(bind=True)
+def upgrade_screenly(self, branch, manage_network, upgrade_system):
+    """Background task to upgrade Screenly-OSE."""
+    if not path.isfile('/usr/local/sbin/upgrade_screenly.sh'):
+        raise Exception('File /usr/local/sbin/upgrade_screenly.sh does not exist.')
+    upgrade_process = sh.sudo('/usr/local/sbin/upgrade_screenly.sh',
+                              '-w', 'true',
+                              '-b', branch,
+                              '-n', manage_network,
+                              '-s', upgrade_system,
+                              _bg=True,
+                              _err_to_out=True)
+    while True:
+        if not upgrade_process.process.alive:
+            break
+        self.update_state(state="PROGRESS", meta={'status': upgrade_process.process.stdout})
+        time.sleep(1)
+
+    return {'status': upgrade_process.process.stdout}
+
+
 @celery.task
 def reboot_screenly():
-    """
-    Background task to reboot Screenly-OSE.
-    @TODO. Fix me. This will not work in Docker.
-    """
+    """Background task to reboot Screenly-OSE."""
     sh.sudo('shutdown', '-r', 'now', _bg=True)
 
 
 @celery.task
 def shutdown_screenly():
-    """
-    Background task to shutdown Screenly-OSE.
-    @TODO. Fix me. This will not work in Docker.
-    """
+    """Background task to shutdown Screenly-OSE."""
     sh.sudo('shutdown', 'now', _bg=True)
 
 
 @celery.task
 def append_usb_assets(mountpoint):
-    """
-    @TODO. Fix me. This will not work in Docker.
-    """
     settings.load()
 
     datetime_now = datetime.now()
@@ -175,9 +164,6 @@ def append_usb_assets(mountpoint):
 
 @celery.task
 def remove_usb_assets(mountpoint):
-    """
-    @TODO. Fix me. This will not work in Docker.
-    """
     settings.load()
     with db.conn(settings['database']) as conn:
         for asset in assets_helper.read(conn):
@@ -187,9 +173,6 @@ def remove_usb_assets(mountpoint):
 
 @celery.task
 def cleanup_usb_assets(media_dir='/media'):
-    """
-    @TODO. Fix me. This will not work in Docker.
-    """
     settings.load()
     mountpoints = ['%s/%s' % (media_dir, x) for x in listdir(media_dir) if path.isdir('%s/%s' % (media_dir, x))]
     with db.conn(settings['database']) as conn:
@@ -215,6 +198,35 @@ def output_json(data, code, headers=None):
 
 def api_error(error):
     return make_response(json_dump({'error': error}), 500)
+
+
+def is_up_to_date():
+    """
+    Determine if there is any update available.
+    Used in conjunction with check_update() in viewer.py.
+    """
+
+    sha_file = path.join(settings.get_configdir(), 'latest_screenly_sha')
+
+    # Until this has been created by viewer.py,
+    # let's just assume we're up to date.
+    if not path.exists(sha_file):
+        return True
+
+    try:
+        with open(sha_file, 'r') as f:
+            latest_sha = f.read().strip()
+    except:
+        latest_sha = None
+
+    if latest_sha:
+        return diagnostics.get_git_hash() == latest_sha
+
+    # If we weren't able to verify with remote side,
+    # we'll set up_to_date to true in order to hide
+    # the 'update available' message
+    else:
+        return True
 
 
 def template(template_name, **context):
@@ -397,7 +409,7 @@ def prepare_asset(request, unique_name=False):
     if not all([get('name'), get('uri'), get('mimetype')]):
         raise Exception("Not enough information provided. Please specify 'name', 'uri', and 'mimetype'.")
 
-    name = escape(get('name'))
+    name = get('name')
     if unique_name:
         with db.conn(settings['database']) as conn:
             names = assets_helper.get_names_of_assets(conn)
@@ -420,7 +432,7 @@ def prepare_asset(request, unique_name=False):
         'nocache': get('nocache'),
     }
 
-    uri = escape(get('uri').encode('utf-8'))
+    uri = get('uri').encode('utf-8')
 
     if uri.startswith('/'):
         if not path.isfile(uri):
@@ -486,8 +498,7 @@ def prepare_asset_v1_2(request_environ, asset_id=None, unique_name=False):
         raise Exception(
             "Not enough information provided. Please specify 'name', 'uri', 'mimetype', 'is_enabled', 'start_date' and 'end_date'.")
 
-    ampfix = "&amp;"
-    name = escape(get('name').replace(ampfix, '&'))
+    name = get('name')
     if unique_name:
         with db.conn(settings['database']) as conn:
             names = assets_helper.get_names_of_assets(conn)
@@ -508,7 +519,7 @@ def prepare_asset_v1_2(request_environ, asset_id=None, unique_name=False):
         'nocache': get('nocache')
     }
 
-    uri = (get('uri')).replace(ampfix, '&').replace('<', '&lt;').replace('>', '&gt;').replace('\'', '&apos;').replace('\"', '&quot;')
+    uri = get('uri')
 
     if uri.startswith('/'):
         if not path.isfile(uri):
@@ -519,11 +530,9 @@ def prepare_asset_v1_2(request_environ, asset_id=None, unique_name=False):
 
     if not asset_id:
         asset['asset_id'] = uuid.uuid4().hex
-
-    if not asset_id and uri.startswith('/'):
-        new_uri = "{}{}".format(path.join(settings['assetdir'], asset['asset_id']), get('ext'))
-        rename(uri, new_uri)
-        uri = new_uri
+        if uri.startswith('/'):
+            rename(uri, path.join(settings['assetdir'], asset['asset_id']))
+            uri = path.join(settings['assetdir'], asset['asset_id'])
 
     if 'youtube_asset' in asset['mimetype']:
         uri, asset['name'], asset['duration'] = download_video_from_youtube(uri, asset['asset_id'])
@@ -1201,7 +1210,7 @@ class FileAsset(Resource):
         else:
             file_upload.save(file_path)
 
-        return {'uri': file_path, 'ext': guess_extension(file_type)}
+        return file_path
 
 
 class PlaylistOrder(Resource):
@@ -1435,20 +1444,23 @@ class Info(Resource):
     method_decorators = [api_response, authorized]
 
     def get(self):
-        viewlog = "Not yet implemented"
+        viewlog = None
+        try:
+            viewlog = [line.decode('utf-8') for line in
+                       check_output(['sudo', 'systemctl', 'status', 'screenly-viewer.service', '-n', '20']).split('\n')]
+        except:
+            pass
 
         # Calculate disk space
         slash = statvfs("/")
         free_space = size(slash.f_bavail * slash.f_frsize)
-        display_power = r.get('display_power')
 
         return {
             'viewlog': viewlog,
             'loadavg': diagnostics.get_load_avg()['15 min'],
             'free_space': free_space,
             'display_info': diagnostics.get_monitor_status(),
-            'display_power': display_power,
-            'up_to_date': is_up_to_date()
+            'display_power': diagnostics.get_display_power()
         }
 
 
@@ -1590,13 +1602,13 @@ api.add_resource(ViewerCurrentAsset, '/api/v1/viewer_current_asset')
 
 try:
     my_ip = get_node_ip()
-except Exception:
+except:
     pass
 else:
     SWAGGER_URL = '/api/docs'
     swagger_address = getenv("SWAGGER_HOST", my_ip)
 
-    if settings['use_ssl'] or is_demo_node:
+    if settings['use_ssl']:
         API_URL = 'https://{}/api/swagger.json'.format(swagger_address)
     elif LISTEN == '127.0.0.1' or swagger_address != my_ip:
         API_URL = "http://{}/api/swagger.json".format(swagger_address)
@@ -1607,7 +1619,7 @@ else:
         SWAGGER_URL,
         API_URL,
         config={
-            'app_name': "Screenly OSE API"
+            'app_name': "Screenly API"
         }
     )
     app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
@@ -1631,7 +1643,7 @@ def viewIndex():
     if settings['use_ssl']:
         ws_addresses.append('wss://' + my_ip + '/ws/')
     else:
-        ws_addresses.append('ws://' + my_ip + '/ws/')
+        ws_addresses.append('ws://' + my_ip + ':' + settings['websocket_port'])
 
     if resin_uuid:
         ws_addresses.append('wss://{}.resindevice.io/ws/'.format(resin_uuid))
@@ -1718,7 +1730,6 @@ def settings_page():
         'user': settings['user'],
         'need_current_password': bool(settings['auth_backend']),
         'is_balena': is_balena_app(),
-        'is_docker': is_docker(),
         'auth_backend': settings['auth_backend'],
         'auth_backends': auth_backends
     })
@@ -1729,26 +1740,21 @@ def settings_page():
 @app.route('/system-info')
 @authorized
 def system_info():
-    viewlog = ["Yet to be implemented"]
+    try:
+        viewlog = [line.decode('utf-8') for line in
+                   check_output(['sudo', 'systemctl', 'status', 'screenly-viewer.service', '-n', '20']).split('\n')]
+    except Exception:
+        viewlog = None
 
     loadavg = diagnostics.get_load_avg()['15 min']
+
     display_info = diagnostics.get_monitor_status()
-    display_power = r.get('display_power')
+
+    display_power = diagnostics.get_display_power()
 
     # Calculate disk space
     slash = statvfs("/")
     free_space = size(slash.f_bavail * slash.f_frsize)
-
-    # Memory
-    virtual_memory = psutil.virtual_memory()
-    memory = "Total: {} | Used: {} | Free: {} | Shared: {} | Buff: {} | Available: {}".format(
-        virtual_memory.total >> 20,
-        virtual_memory.used >> 20,
-        virtual_memory.free >> 20,
-        virtual_memory.shared >> 20,
-        virtual_memory.buffers >> 20,
-        virtual_memory.available >> 20
-    )
 
     # Get uptime
     system_uptime = timedelta(seconds=diagnostics.get_uptime())
@@ -1756,17 +1762,16 @@ def system_info():
     # Player name for title
     player_name = settings['player_name']
 
-    raspberry_pi_revision = raspberry_pi_helper.parse_cpu_info().get('revision', False)
-    if raspberry_pi_revision:
-        raspberry_pi_details = raspberry_pi_helper.lookup_raspberry_pi_revision(
-                raspberry_pi_revision
+    try:
+        raspberry_code = diagnostics.get_raspberry_code()
+        raspberry_model = '{} Revision: {} Ram: {} {}'.format(
+            diagnostics.get_raspberry_model(raspberry_code),
+            diagnostics.get_raspberry_revision(raspberry_code),
+            diagnostics.get_raspberry_ram(raspberry_code),
+            diagnostics.get_raspberry_manufacturer(raspberry_code)
         )
-        raspberry_pi_model = '{} ({})'.format(
-            raspberry_pi_details['model'],
-            raspberry_pi_details['manufacturer']
-        )
-    else:
-        raspberry_pi_model = 'Unknown.'
+    except sh.ErrorReturnCode_1:
+        raspberry_model = 'Unable to determine raspberry model.'
 
     screenly_version = '{}@{}'.format(
         diagnostics.get_git_branch(),
@@ -1780,10 +1785,9 @@ def system_info():
         loadavg=loadavg,
         free_space=free_space,
         uptime=system_uptime,
-        memory=memory,
         display_info=display_info,
         display_power=display_power,
-        raspberry_pi_model=raspberry_pi_model,
+        raspberry_model=raspberry_model,
         screenly_version=screenly_version,
         mac_address=get_node_mac_address()
     )
@@ -1796,6 +1800,7 @@ def integrations():
     context = {
         'player_name': settings['player_name'],
         'is_balena': is_balena_app(),
+        'is_wott_installed': is_wott_integrated(),
     }
 
     if context['is_balena']:
@@ -1806,13 +1811,32 @@ def integrations():
         context['balena_host_os_version'] = getenv('BALENA_HOST_OS_VERSION')
         context['balena_device_name_at_init'] = getenv('BALENA_DEVICE_NAME_AT_INIT')
 
+    if context['is_wott_installed']:
+        context['wott_device_id'] = get_wott_device_id()
+
     return template('integrations.html', **context)
 
 
 @app.route('/splash-page')
 def splash_page():
-    my_ip = get_node_ip()
-    return template('splash-page.html', my_ip=get_node_ip())
+    url = None
+    try:
+        my_ip = get_node_ip()
+    except Exception as e:
+        ip_lookup = False
+        error_msg = e
+    else:
+        ip_lookup = True
+
+        if settings['use_ssl']:
+            url = 'https://{}'.format(my_ip)
+        elif LISTEN == '127.0.0.1':
+            url = "http://{}".format(my_ip)
+        else:
+            url = "http://{}:{}".format(my_ip, PORT)
+
+    msg = url if url else error_msg
+    return template('splash-page.html', ip_lookup=ip_lookup, msg=msg)
 
 
 @app.errorhandler(403)

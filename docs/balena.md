@@ -2,27 +2,33 @@
 
 ## tl;dr instructions
 
-* Create a [Balena](https://www.balena.io) account
+* Create a [balena.io](https://www.resin.io) account
 * [Create application](https://docs.balena.io/raspberrypi3/nodejs/getting-started/#create-an-application)
 * Download balenaOS
 * Flash out the disk image
 * Boot the device
-
-
-To use Balena and any other Pi board, you will need to use the [Balena CLI](https://github.com/balena-io/balena-cli).
-
-Once you have Balena CLI installed, run the following commands:
+* Clone the Screenly OSE repository:
 
 ```
-$ git clone git@github.com:Screenly/screenly-ose.git
-$ cd screenly-ose
-$ balena login
-[...]
+$ git clone https://github.com/Screenly/screenly-ose.git
 ```
 
-To deploy, you need to use the following command:
+* Add the balena git remote endpoint:
+
 ```
-$ ./bin/deploy_to_balena.sh
+$ git remote add balena <USERNAME>@git.resin.io:<USERNAME>/<APPNAME>.git
 ```
 
-Note that you need to re-run this command every time you deploy.
+* Push the code to balena.io:
+
+```
+$ git push balena master
+```
+
+*(This will take some time, as all components are being installed)*
+
+* Navigate to "Fleet Configuration" in the web interface and create a new configuration with the key `balena_HOST_CONFIG_gpu_mem` and the value `64`. If you're having issues with video playback performance, you may need to increase this to 192, or sometimes even 256.
+
+## Longer instructions
+
+For more detailed instructions, including a screencast, check out the blog post [Deploy a digital signage application with Screenly OSE and balena.io](https://resin.io/blog/deploy-a-digital-signage-application-with-screenly-and-resin/).

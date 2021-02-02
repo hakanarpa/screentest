@@ -1,7 +1,4 @@
 *.py[co]
-*.git
-*.github
-docs/*
 
 # Packages
 *.egg
@@ -37,5 +34,3 @@ pip-log.txt
 .sass-cache/*
 node_modules
 venv
-
-docker-compose.*

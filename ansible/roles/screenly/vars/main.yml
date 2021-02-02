@@ -1,11 +1,8 @@
 screenly_systemd_units:
-  - udev-restart.service
-
-deprecated_screenly_systemd_units:
-  - screenly-celery.service
-  - screenly-web.service
-  - screenly-websocket_server_layer.service
-  - screenly-viewer.service
   - X.service
   - matchbox.service
-  - wifi-connect.service
+  - screenly-celery.service
+  - screenly-viewer.service
+  - screenly-web.service
+  - screenly-websocket_server_layer.service
+  - udev-restart.service

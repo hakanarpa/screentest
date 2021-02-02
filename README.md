@@ -1,7 +1,5 @@
-Hakan Arpa
 [![Build Status](https://travis-ci.org/Screenly/screenly-ose.svg?branch=master)](https://travis-ci.org/Screenly/screenly-ose)
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/5905ebcf4aab4220ad9fdf3fb679c49d)](https://www.codacy.com/app/vpetersson/screenly-ose?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=Screenly/screenly-ose&amp;utm_campaign=Badge_Grade)
-[![balena deploy button](https://www.balena.io/deploy.svg)](https://dashboard.balena-cloud.com/deploy?repoUrl=https://github.com/screenly/screenly-ose&defaultDeviceType=raspberrypi3)
 
 # Screenly OSE - Digital Signage for the Raspberry Pi
 
@@ -9,13 +7,11 @@ Hakan Arpa
 
 **PLEASE NOTE:** Screenly OSE and the commercial version of Screenly (formerly known as Screenly Pro) are **two completely separate products**. They **do not share any code base and behave very differently** both with regards to management and performance. Hence do not use one to evaluate the other.
 
-Want to help OSE thrive? Support us using [GitHub Sponsor](https://github.com/sponsors/Screenly).
-
 ## Disk images
 
 The recommended installation method is to grab the latest disk image from [here](https://github.com/Screenly/screenly-ose/releases).
 
-## Installing on Raspbian/Raspberry Pi OS
+## Installing on Raspbian
 
 The tl;dr for installing Screenly OSE on [Raspbian Lite](https://www.raspberrypi.org/downloads/raspbian/) is:
 
@@ -31,13 +27,6 @@ $ bash <(curl -sL https://www.screenly.io/install-ose.sh)
 
 During ideal conditions (Raspberry Pi 3 Model B+, class 10 SD card and fast internet connection), the installation normally takes 15-30 minutes. On a Raspberry Pi Zero or Raspberry Pi Model B with a class 4 SD card, the installation will take hours. As such, it is usually a lot faster to use the provided disk images.
 
-## Installing with Balena
-
-Deploying Screenly OSE to Balena is a breeze. Note that the Deploy to Balena button will **only** work for Pi 3. See the page below for how to run on other boards.
-
-
-For further information please take a look at our docs section where we have a [Balena specific guide](https://github.com/Screenly/screenly-ose/blob/master/docs/balena.md).
-
 ## Upgrading on Screenly OSE
 
 The releases are based on the [Sprints](https://github.com/Screenly/screenly-ose/projects). At the end of each sprint, we merge the master branch (also known as the developer version), into the production branch and generate a new disk image.
@@ -50,13 +39,12 @@ To learn more about Screenly, please visit the official website at [Screenly.io]
 
 Quick links:
 
- * [FAQ](https://support.screenly.io/hc/en-us/categories/360002606694-OSE)
+ * [FAQ](https://support.screenly.io/hc/en-us/sections/202652366-Frequently-Asked-Questions-FAQ-)
  * [Screenly OSE Forum](https://forums.screenly.io/c/screenly-ose)
  * [Screenly OSE Home](https://www.screenly.io/ose/)
- * [Live Demo](https://ose.demo.screenlyapp.com/)
- * [QA Checklist](https://github.com/Screenly/screenly-ose/blob/master/docs/qa-checklist.md)
- * [API Docs](https://ose.demo.screenlyapp.com/api/docs/)
- * [Developer Documentation](https://github.com/Screenly/screenly-ose/blob/master/docs/developer-documentation.md)
+ * [Live Demo](http://ose.demo.screenlyapp.com/)
+ * [QA Checklist](https://www.forgett.com/checklist/1789089623)
+ * [API Docs](http://ose.demo.screenlyapp.com/api/docs/)
 
 Screenly OSE works on all Raspberry Pi versions, including Raspberry Pi Zero and Raspberry Pi 3 Model B.
 
@@ -67,7 +55,12 @@ To simplify development of the server module of Screenly OSE, we've created a Do
 Assuming you're in the source code repository, simply run:
 
 ```
-$ docker-compose -f docker-compose.dev.yml up
+$ docker run --rm -it \
+    --name=screenly-dev \
+    -e 'LISTEN=0.0.0.0' \
+    -p 8080:8080 \
+    -v $(pwd):/home/pi/screenly \
+    screenly/ose-dev-server
 ```
 
 ## Running the Unit Tests
