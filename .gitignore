@@ -1,0 +1,38 @@
+*.py[co]
+.idea/
+
+# Packages
+*.egg
+*.egg-info
+dist
+build
+eggs
+parts
+var
+sdist
+develop-eggs
+.installed.cfg
+
+# Installer logs
+pip-log.txt
+
+# Unit test / coverage reports
+.coverage
+.tox
+
+#Translations
+*.mo
+
+#Mr Developer
+.mr.developer.cfg
+
+# VIM
+*.swp
+
+.DS_Store
+.fseventsd/*
+.Spotlight-V100/*
+.sass-cache/*
+venv
+node_modules
+*.retry
