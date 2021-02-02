@@ -32,6 +32,10 @@
                         <td>{{ context.free_space }}</td>
                     </tr>
                     <tr>
+                        <th scope="row">Memory</th>
+                        <td>{{ context.memory }}</td>
+                    </tr>
+                    <tr>
                         <th scope="row">Uptime</th>
                         <td>{{ context.uptime.days }} days and {{ (context.uptime.seconds / 3600)|round(2) }} hours</td>
                     </tr>
@@ -40,15 +44,15 @@
                         <td>{{ context.display_info }}</td>
                     </tr>
                     <tr>
-                        <th scope="row">Display Power</th>
+                        <th scope="row">Display Power (CEC)</th>
                         <td>{{ context.display_power }}</td>
                     </tr>
                     <tr>
-                        <th scope="row">Raspberry Model</th>
-                        <td>{{ context.raspberry_model }}</td>
+                        <th scope="row">Raspberry Pi Model</th>
+                        <td>{{ context.raspberry_pi_model }}</td>
                     </tr>
                     <tr>
-                        <th scope="row">Screenly Version</th>
+                        <th scope="row">Screenly OSE Version</th>
                         <td>{{ context.screenly_version }}</td>
                     </tr>
                     <tr>

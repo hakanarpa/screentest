@@ -1,0 +1,25 @@
+version: "2"
+slug: "screenly-ose"
+name: "Screenly OSE"
+type: "sw.application"
+assets:
+  - url: "https://github.com/hakanarpa/screenly-ose/"
+    name: "repository"
+  - url: "https://raw.githubusercontent.com/hakanarpa/screenly-ose/master/static/img/ose-logo.png"
+    name: "logo"
+data:
+  description: "The most popular digital signage project for the Raspberry Pi"
+  applicationConfigVariables:
+    - BALENA_HOST_CONFIG_gpu_mem: 128
+    - BALENA_HOST_CONFIG_framebuffer_depth: 32
+    - BALENA_HOST_CONFIG_framebuffer_ignore_alpha: 1
+    - BALENA_HOST_CONFIG_dtparam: "\"i2c_arm=on\",\"spi=on\",\"audio=on\",\"vc4-kms-v3d\""
+  defaultDeviceType: "raspberrypi3"
+  supportedDeviceTypes:
+    - "raspberry-pi"
+    - "raspberry-pi2"
+    - "raspberrypi3"
+    - "raspberrypi3-64"
+    - "raspberrypi4-64"
+    - "fincm3"
+    - "raspberrypi400-64"

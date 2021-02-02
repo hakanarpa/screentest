@@ -1,0 +1,34 @@
+FROM balenalib/rpi-raspbian:buster
+
+RUN apt-get update && \
+    apt-get -y install --no-install-recommends \
+        build-essential \
+        cec-utils \
+        curl \
+        ffmpeg \
+        git \
+        git-core \
+        ifupdown \
+        libcec-dev  \
+        libffi-dev \
+        libraspberrypi0 \
+        libssl-dev \
+        libzmq3-dev \
+        lsb-release \
+        mplayer \
+        net-tools \
+        omxplayer \
+        procps \
+        psmisc \
+        python-dev \
+        python-gobject \
+        python-pil \
+        python-pip \
+        python-setuptools \
+        python-simplejson \
+        sqlite3 && \
+    apt-get clean
+
+# Works around issue with `curl`
+# https://github.com/balena-io-library/base-images/issues/562
+RUN c_rehash

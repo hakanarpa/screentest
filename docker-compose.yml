@@ -1,73 +1,97 @@
 version: "2"
 services:
-  screenly-server:
+  srly-ose-server:
+    image: screenly/srly-ose-server
     build:
       context: .
-      dockerfile: docker/Dockerfile.server.template
+      dockerfile: docker/Dockerfile.server
     environment:
       - HOME=/data
       - LISTEN=0.0.0.0
-      - PYTHONPATH=/data/screenly
-      - SCREENLYSERVICE=server
-    network_mode: "host"
-    privileged: true
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    devices:
+      - "/dev/vchiq:/dev/vchiq"
+    restart: always
     volumes:
       - resin-data:/data
+    labels:
+      io.balena.features.supervisor-api: '1'
 
-  screenly-viewer:
+  srly-ose-viewer:
+    image: screenly/srly-ose-viewer
     build:
       context: .
-      dockerfile: docker/Dockerfile.viewer.template
+      dockerfile: docker/Dockerfile.viewer
     depends_on:
-      - screenly-server
+      - srly-ose-server
     environment:
-      - DISPLAY=:0.0
       - HOME=/data
+      - PORT=80
       - NOREFRESH=1
-      - PYTHONPATH=/data/screenly
-      - SCREENLYSERVICE=viewer
-    network_mode: "host"
+      - LISTEN=srly-ose-nginx
     privileged: true
+    restart: always
     volumes:
       - resin-data:/data
 
-  screenly-websocket:
+  srly-ose-websocket:
+    image: screenly/srly-ose-websocket
     build:
       context: .
-      dockerfile: docker/Dockerfile.websocket.template
+      dockerfile: docker/Dockerfile.websocket
     depends_on:
-      - screenly-server
+      - srly-ose-server
     environment:
       - HOME=/data
-      - PYTHONPATH=/data/screenly
-      - SCREENLYSERVICE=websocket
-    network_mode: "host"
-    privileged: true
+      - LISTEN=0.0.0.0
+    restart: always
     volumes:
       - resin-data:/data
 
-  screenly-celery:
+  srly-ose-celery:
+    image: screenly/srly-ose-celery
     build:
       context: .
-      dockerfile: docker/Dockerfile.celery.template
+      dockerfile: docker/Dockerfile.celery
     depends_on:
-      - screenly-server
-      - rabbitmq
+      - srly-ose-server
+      - redis
     environment:
       - HOME=/data
-      - PYTHONPATH=/data/screenly
-      - SCREENLYSERVICE=celery
-    network_mode: "host"
-    privileged: true
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    devices:
+      - "/dev/vchiq:/dev/vchiq"
+    restart: always
     volumes:
       - resin-data:/data
 
-  rabbitmq:
-    image: arm32v7/rabbitmq
-    command: rabbitmq-server
+  redis:
+    image: screenly/srly-ose-redis
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.redis
+    restart: always
+    volumes:
+      - redis-data:/var/lib/redis
+
+  srly-ose-nginx:
+    image: screenly/srly-ose-nginx
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.nginx
     ports:
-      - 5672:5672
-      - 15672:15672
+      - 80:80
+    environment:
+      - HOME=/data
+    depends_on:
+      - srly-ose-server
+      - srly-ose-websocket
+    restart: always
+    volumes:
+      - resin-data:/data:ro
 
 volumes:
     resin-data:
+    redis-data:
